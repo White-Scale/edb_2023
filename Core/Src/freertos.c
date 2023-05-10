@@ -83,7 +83,7 @@ void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
  */
 void MX_FREERTOS_Init(void) {
 	/* USER CODE BEGIN Init */
-
+	srand(time(NULL));
 	/* USER CODE END Init */
 
 	/* USER CODE BEGIN RTOS_MUTEX */
@@ -112,21 +112,20 @@ void MX_FREERTOS_Init(void) {
 	/* USER CODE BEGIN RTOS_THREADS */
 	long ret = 0;
 
-	ret = xTaskCreate((TaskFunction_t) mytask_sender, (const char*) "thread_sender",
-				(uint16_t) 256, (void*) NULL, (UBaseType_t) 2,
-				(TaskHandle_t*) &handle_sender);
-	log("ret after create sender %d",ret);
+	ret = xTaskCreate((TaskFunction_t) mytask_sender,
+			(const char*) "thread_sender", (uint16_t) 256, (void*) NULL,
+			(UBaseType_t) 2, (TaskHandle_t*) &handle_sender);
+	log("ret after create sender %d", ret);
 
 	ret = xTaskCreate((TaskFunction_t) mytask_receiver,
 			(const char*) "thread_receiver", (uint16_t) 256, (void*) NULL,
 			(UBaseType_t) 1, (TaskHandle_t*) &handle_receiver);
-	log("ret after create recver %d",ret);
+	log("ret after create recver %d", ret);
 
-
-	ret = xTaskCreate((TaskFunction_t) mytask_generator, (const char*) "thread_gen",
-			(uint16_t) 256, (void*) NULL, (UBaseType_t) 2,
-			(TaskHandle_t*) &handle_generator);
-	log("ret after create gen %d",ret);
+	ret = xTaskCreate((TaskFunction_t) mytask_generator,
+			(const char*) "thread_gen", (uint16_t) 256, (void*) NULL,
+			(UBaseType_t) 2, (TaskHandle_t*) &handle_generator);
+	log("ret after create gen %d", ret);
 	/* add threads, ... */
 	/* USER CODE END RTOS_THREADS */
 
@@ -172,8 +171,15 @@ void mytask_receiver(void *argument) {
 			SX_packet *pac2 = (SX_packet*) buffer2;
 			int received = SX_recv_once(pac2);
 			if (received) {
-				int valid = SX_check_packet(pac2, (uint8_t)TYPE_SOH);
+				int valid = SX_check_packet(pac2, (uint8_t) TYPE_SOH);
+
 				if (valid) {
+					uint8_t crc = CRC_BYTE(pac2);
+					CRC_BYTE(pac2) = 0;
+					printf(
+							"[receiver] succesfully received a packect\r\n[receiver] content: %s\r\n",
+							pac2->content);
+					CRC_BYTE(pac2) = crc;
 					SX_packet *pac = (SX_packet*) buffer;
 					//set the packet's attributes
 					pac->type = TYPE_ACK;
@@ -212,6 +218,9 @@ void mytask_sender(void *argument) {
 			ulTaskNotifyTake( pdTRUE, portMAX_DELAY);
 		}
 
+		if (message_flag == 0) {
+			continue;
+		}
 		xSemaphoreTake(SX1278_sem, portMAX_DELAY);
 		{
 			//use the resource "message buffer"
@@ -231,6 +240,12 @@ void mytask_sender(void *argument) {
 			CRC_BYTE(pac) = CRC8((uint8_t*) pac, pac->length - 1);
 			//send the packet
 			SX_send(pac);
+			uint8_t crc = CRC_BYTE(pac);
+			CRC_BYTE(pac) = 0;
+			printf(
+					"[sender] succesfully sent a packect\r\n[sender] content: %s\r\n",
+					pac->content);
+			CRC_BYTE(pac) = crc;
 			//a 1s window to receive a ack
 			int res = SX_recv(pac2, 1000, 50);
 			if (res) {
@@ -244,10 +259,13 @@ void mytask_sender(void *argument) {
 				retry_cnt = 0;
 				xSemaphoreGive(message_sem);
 				message_flag = 0;
+				printf("[sender]get ack, success!\r\n");
 			} else {
 				retry_flag = 1;
 				retry_cnt++;
-				retry_time = 500;
+				retry_time = (rand() % (1 << retry_cnt)) * 100;
+				log("wait %d then resend", retry_time);
+				printf("[sender]get no ack, wait %d then resend\r\n", retry_time);
 				if (retry_cnt > 5) {
 					//send failed, give up
 //					xSemaphoreGive(message_sem);
@@ -263,7 +281,7 @@ void mytask_sender(void *argument) {
 }
 
 void mytask_generator(void *argument) {
-	srand(time(NULL));
+
 	uint32_t wait_time = 0;
 	wait_time = (rand() % 7 + 3) * 1000;
 	int seq = 0;

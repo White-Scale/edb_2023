@@ -10,7 +10,7 @@
 
 #include "sx1278.h"
 
-//#define send
+#define send
 
 extern SX1278_hw_t sx1278_hw;
 extern SX1278_t sx1278;

@@ -35,7 +35,7 @@ extern "C" {
 extern UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN Private defines */
-#ifdef DEBUG
+#ifdef DEBUG_
 #define log(format, ...) \
          	printf("[%s:%d->%s] "format"\r\n", __FILE__, __LINE__, __func__, ##__VA_ARGS__)
 #else
