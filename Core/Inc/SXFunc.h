@@ -15,6 +15,7 @@
 extern SX1278_hw_t sx1278_hw;
 extern SX1278_t sx1278;
 extern char buffer[];
+extern char buffer2[];
 
 extern int message ;
 extern int message_length;
@@ -41,6 +42,8 @@ typedef struct packet{
 #define MESH_ADDR_REMOTE 1
 #endif
 
+#define MAX_DELAY_TIME 0xFFFF
+
 #define TYPE_SOH 1
 #define TYPE_ACK 2
 #define TYPE_NAK 3
@@ -50,5 +53,7 @@ void SX_send(SX_packet *pac);
 int SX_recv(SX_packet *pac, unsigned int time_out, unsigned freq);
 void SX_sender();
 void SX_receiver();
+int SX_check_packet(SX_packet *pac2);
+int SX_recv_once(SX_packet *pac);
 
 #endif /* INC_SXFUNC_H_ */

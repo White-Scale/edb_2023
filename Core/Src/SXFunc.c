@@ -81,7 +81,9 @@ void SX_send(SX_packet *pac) {
 int SX_recv(SX_packet *pac, unsigned int time_out, unsigned freq) {
 	log("Receiving package...");
 	int cnt = 0;
-	while (cnt < time_out) {
+	SX_ret = SX1278_LoRaEntryRx(&sx1278, 16, 2000);
+	//if max delay time,just wait until a packet arrive
+	while (time_out == MAX_DELAY_TIME ? 1 : (cnt < time_out)) {
 		SX_ret = SX1278_LoRaRxPacket(&sx1278);
 //		log("Received: %d", SX_ret);
 		if (SX_ret > 0) {
@@ -100,6 +102,26 @@ int SX_recv(SX_packet *pac, unsigned int time_out, unsigned freq) {
 		cnt += freq;
 	}
 	log("Received: %d,nothing", SX_ret);
+	return SX_ret;
+}
+int SX_recv_once(SX_packet *pac) {
+//	log("checking buffer..");
+	SX_ret = SX1278_LoRaEntryRx(&sx1278, 16, 2000);
+	//if max delay time,just wait until a packet arrive
+	SX_ret = SX1278_LoRaRxPacket(&sx1278);
+	if (SX_ret > 0) {
+		SX1278_read(&sx1278, (uint8_t*) pac, SX_ret);
+		uint8_t crc = CRC_BYTE(pac);
+		uint8_t *tmp = (uint8_t*) pac;
+		log("received a packet with header : %d %d %d %d %d %d", tmp[0], tmp[1],
+				tmp[2], tmp[3], tmp[4], tmp[5]);
+		CRC_BYTE(pac) = 0;
+		log("Content (%d): %s", SX_ret, (char* )pac->content);
+		CRC_BYTE(pac) = crc;
+		log("Package received ...");
+		return SX_ret;
+	}
+//	log("Received: %d,nothing", SX_ret);
 	return SX_ret;
 }
 
@@ -131,7 +153,7 @@ void SX_sender() {
 
 		//wait 2s for reply
 //		HAL_Delay(time_out);
-		int recv_success = SX_recv(pac2,2000,50);
+		int recv_success = SX_recv(pac2, 2000, 50);
 		if (recv_success) {
 			uint8_t *tmp = (uint8_t*) pac2;
 			log("%d %d %d %d %d %d %d", tmp[0], tmp[1], tmp[2], tmp[3], tmp[4],
@@ -162,6 +184,26 @@ void SX_sender() {
 	}
 }
 
+int SX_check_packet(SX_packet *pac2) {
+	int ack = 1;
+	if (CRC_BYTE(pac2) != CRC8((uint8_t*) pac2, pac2->length - 1)) {
+		log("CRC: %d %d", CRC_BYTE(pac2),
+				CRC8((uint8_t* ) pac2, pac2->length - 1));
+		log("crc wrong");
+		ack = 0;
+	} else if (pac2->dst != MESH_ADDR_LOCAL) {
+		log("dst not this node");
+		ack = 0;
+	} else if (pac2->type != TYPE_SOH) {
+		log("not a SOH packet");
+		ack = 0;
+	} else {
+		log("a good packet");
+		ack = 1;
+	}
+	return ack;
+}
+
 void SX_receiver() {
 	log("sizeof(SX_packet): %d", sizeof(SX_packet));
 	SX_packet *pac = (SX_packet*) buffer;
@@ -176,7 +218,7 @@ void SX_receiver() {
 
 		//wait 2s for reply
 //		HAL_Delay(time_out);
-		int recv_success = SX_recv(pac2,2000,50);
+		int recv_success = SX_recv(pac2, 2000, 50);
 		if (recv_success) {
 			uint8_t *tmp = (uint8_t*) pac2;
 			log("%d %d %d %d %d %d %d", tmp[0], tmp[1], tmp[2], tmp[3], tmp[4],
