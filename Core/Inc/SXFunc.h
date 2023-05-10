@@ -53,7 +53,8 @@ void SX_send(SX_packet *pac);
 int SX_recv(SX_packet *pac, unsigned int time_out, unsigned freq);
 void SX_sender();
 void SX_receiver();
-int SX_check_packet(SX_packet *pac2);
+//int SX_check_packet(SX_packet *pac2);
+int SX_check_packet(SX_packet *pac2,uint8_t target_type);
 int SX_recv_once(SX_packet *pac);
 
 #endif /* INC_SXFUNC_H_ */

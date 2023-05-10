@@ -30,6 +30,8 @@
 #include "usart.h"
 #include "semphr.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -52,7 +54,7 @@
 uint8_t message_buf[256];
 uint8_t message_flag;
 
-TaskHandle_t handle_receiver,handle_sender;
+TaskHandle_t handle_receiver, handle_sender, handle_generator;
 
 SemaphoreHandle_t SX1278_sem = NULL;
 SemaphoreHandle_t message_sem = NULL;
@@ -66,6 +68,8 @@ const osThreadAttr_t defaultTask_attributes = { .name = "defaultTask",
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
 void mytask_receiver(void *argument);
+void mytask_sender(void *argument);
+void mytask_generator(void *argument);
 /* USER CODE END FunctionPrototypes */
 
 void StartDefaultTask(void *argument);
@@ -89,6 +93,7 @@ void MX_FREERTOS_Init(void) {
 	/* USER CODE BEGIN RTOS_SEMAPHORES */
 	/* add semaphores, ... */
 	SX1278_sem = xSemaphoreCreateMutex();
+	message_sem = xSemaphoreCreateMutex();
 	/* USER CODE END RTOS_SEMAPHORES */
 
 	/* USER CODE BEGIN RTOS_TIMERS */
@@ -105,10 +110,23 @@ void MX_FREERTOS_Init(void) {
 			&defaultTask_attributes);
 
 	/* USER CODE BEGIN RTOS_THREADS */
+	long ret = 0;
 
-	xTaskCreate((TaskFunction_t) mytask_receiver, (const char*) "thread_receiver",
-			(uint16_t) 512, (void*) NULL, (UBaseType_t) 1,
-			(TaskHandle_t*) &handle_receiver);
+	ret = xTaskCreate((TaskFunction_t) mytask_sender, (const char*) "thread_sender",
+				(uint16_t) 256, (void*) NULL, (UBaseType_t) 2,
+				(TaskHandle_t*) &handle_sender);
+	log("ret after create sender %d",ret);
+
+	ret = xTaskCreate((TaskFunction_t) mytask_receiver,
+			(const char*) "thread_receiver", (uint16_t) 256, (void*) NULL,
+			(UBaseType_t) 1, (TaskHandle_t*) &handle_receiver);
+	log("ret after create recver %d",ret);
+
+
+	ret = xTaskCreate((TaskFunction_t) mytask_generator, (const char*) "thread_gen",
+			(uint16_t) 256, (void*) NULL, (UBaseType_t) 2,
+			(TaskHandle_t*) &handle_generator);
+	log("ret after create gen %d",ret);
 	/* add threads, ... */
 	/* USER CODE END RTOS_THREADS */
 
@@ -137,8 +155,9 @@ void StartDefaultTask(void *argument) {
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 void mytask_receiver(void *argument) {
+	log("receiver initialize");
 	TickType_t xLastWakeTime;
-	const TickType_t xFrequency = 50;
+	const TickType_t xFrequency = 100;
 
 	// init xLastWakeTime
 	xLastWakeTime = xTaskGetTickCount();
@@ -149,10 +168,11 @@ void mytask_receiver(void *argument) {
 
 		xSemaphoreTake(SX1278_sem, portMAX_DELAY);
 		{
+			log("receive once");
 			SX_packet *pac2 = (SX_packet*) buffer2;
 			int received = SX_recv_once(pac2);
 			if (received) {
-				int valid = SX_check_packet(pac2);
+				int valid = SX_check_packet(pac2, (uint8_t)TYPE_SOH);
 				if (valid) {
 					SX_packet *pac = (SX_packet*) buffer;
 					//set the packet's attributes
@@ -178,12 +198,19 @@ void mytask_receiver(void *argument) {
 	}
 }
 void mytask_sender(void *argument) {
-
+	log("sender initialize");
 	SX_packet *pac = (SX_packet*) buffer;
+	SX_packet *pac2 = (SX_packet*) buffer2;
+	static uint8_t retry_flag = 0, retry_cnt;
+	static uint32_t retry_time;
 
 	for (;;) {
-		// wait for Notify
-		ulTaskNotifyTake( pdTRUE, portMAX_DELAY );
+		if (retry_flag) { // if now we are re-sending a message
+			vTaskDelay(retry_time);
+		} else { //just send a new message
+			// wait for Notify
+			ulTaskNotifyTake( pdTRUE, portMAX_DELAY);
+		}
 
 		xSemaphoreTake(SX1278_sem, portMAX_DELAY);
 		{
@@ -191,9 +218,10 @@ void mytask_sender(void *argument) {
 			xSemaphoreTake(message_sem, portMAX_DELAY);
 			{
 				//move the message to the packet buffer
-				int len_content = sprintf((char*) pac->content, "%s", (char*)message_buf);
+				int len_content = sprintf((char*) pac->content, "%s",
+						(char*) message_buf);
 				pac->length = len_content + sizeof(SX_packet) + 1;
-				xSemaphoreGive(message_sem);
+
 			}
 			//set attributes of the packet to send
 			pac->type = TYPE_SOH;
@@ -203,9 +231,64 @@ void mytask_sender(void *argument) {
 			CRC_BYTE(pac) = CRC8((uint8_t*) pac, pac->length - 1);
 			//send the packet
 			SX_send(pac);
+			//a 1s window to receive a ack
+			int res = SX_recv(pac2, 1000, 50);
+			if (res) {
+				if (SX_check_packet(pac2, TYPE_ACK) != 1) {
+					res = 0;
+				}
+			}
+
+			if (res) {
+				retry_flag = 0;
+				retry_cnt = 0;
+				xSemaphoreGive(message_sem);
+				message_flag = 0;
+			} else {
+				retry_flag = 1;
+				retry_cnt++;
+				retry_time = 500;
+				if (retry_cnt > 5) {
+					//send failed, give up
+//					xSemaphoreGive(message_sem);
+					message_flag = 0;
+					retry_flag = 0;
+					retry_cnt = 0;
+				}
+				xSemaphoreGive(message_sem);
+			}
 			xSemaphoreGive(SX1278_sem);
 		}
 	}
+}
+
+void mytask_generator(void *argument) {
+	srand(time(NULL));
+	uint32_t wait_time = 0;
+	wait_time = (rand() % 7 + 3) * 1000;
+	int seq = 0;
+
+	TickType_t xLastWakeTime;
+
+	xLastWakeTime = xTaskGetTickCount();
+	for (;;) {
+		log("in generator()");
+		vTaskDelayUntil(&xLastWakeTime, wait_time);
+		xSemaphoreTake(message_sem, portMAX_DELAY);
+		{
+			if (message_flag == 0) {
+				//fill the message buffer
+				sprintf((char*) message_buf, "Hello M3! seq:%d", seq);
+				message_flag = 1;
+				seq++;
+			}
+			log("message genarated!");
+			xSemaphoreGive(message_sem);
+			wait_time = (rand() % 7 + 3) * 1000;
+			xTaskNotifyGive(handle_sender);
+		}
+	}
+
 }
 /* USER CODE END Application */
 

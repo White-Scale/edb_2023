@@ -8,6 +8,10 @@
 #include "sx1278.h"
 #include "usart.h"
 #include "spi.h"
+
+#include "FreeRTOS.h"
+#include "task.h"
+
 #include <stdio.h>
 
 SX1278_hw_t sx1278_hw = { { SX_RST_Pin, SX_RST_GPIO_Port },     // rst
@@ -22,6 +26,8 @@ char buffer2[512];
 int message = 0;
 int message_length;
 int SX_ret;
+
+int isRx = 0;
 
 unsigned char CRC8(unsigned char *ptr, unsigned char len) {
 
@@ -64,6 +70,7 @@ void SX_send(SX_packet *pac) {
 
 	message_length = pac->length;
 	SX_ret = SX1278_LoRaEntryTx(&sx1278, message_length, 2000);
+	isRx =0;
 	log("Entry: %d", SX_ret);
 	uint8_t *tmp = (uint8_t*) pac;
 	log("sending a packet with header : %d %d %d %d %d %d", tmp[0], tmp[1],
@@ -82,6 +89,7 @@ int SX_recv(SX_packet *pac, unsigned int time_out, unsigned freq) {
 	log("Receiving package...");
 	int cnt = 0;
 	SX_ret = SX1278_LoRaEntryRx(&sx1278, 16, 2000);
+	isRx=1;
 	//if max delay time,just wait until a packet arrive
 	while (time_out == MAX_DELAY_TIME ? 1 : (cnt < time_out)) {
 		SX_ret = SX1278_LoRaRxPacket(&sx1278);
@@ -98,7 +106,9 @@ int SX_recv(SX_packet *pac, unsigned int time_out, unsigned freq) {
 			log("Package received ...");
 			return SX_ret;
 		}
-		HAL_Delay(freq);
+//		HAL_Delay(freq);
+		//use RTOS 's delay to wait
+		vTaskDelay(freq);
 		cnt += freq;
 	}
 	log("Received: %d,nothing", SX_ret);
@@ -106,7 +116,10 @@ int SX_recv(SX_packet *pac, unsigned int time_out, unsigned freq) {
 }
 int SX_recv_once(SX_packet *pac) {
 //	log("checking buffer..");
-	SX_ret = SX1278_LoRaEntryRx(&sx1278, 16, 2000);
+	if(!isRx){
+		SX_ret = SX1278_LoRaEntryRx(&sx1278, 16, 2000);
+		isRx =1;
+	}
 	//if max delay time,just wait until a packet arrive
 	SX_ret = SX1278_LoRaRxPacket(&sx1278);
 	if (SX_ret > 0) {
@@ -183,22 +196,27 @@ void SX_sender() {
 		log("now the seq is %d", seq);
 	}
 }
-
-int SX_check_packet(SX_packet *pac2) {
+/**
+ * the return value of check should have its meaning
+ * such as 1 of a good packet
+ * 2 for dst no this node
+ * 3 for not a specific packet
+ */
+int SX_check_packet(SX_packet *pac2,uint8_t target_type) {
 	int ack = 1;
 	if (CRC_BYTE(pac2) != CRC8((uint8_t*) pac2, pac2->length - 1)) {
 		log("CRC: %d %d", CRC_BYTE(pac2),
 				CRC8((uint8_t* ) pac2, pac2->length - 1));
-		log("crc wrong");
+		log("CRC wrong");
 		ack = 0;
 	} else if (pac2->dst != MESH_ADDR_LOCAL) {
 		log("dst not this node");
 		ack = 0;
-	} else if (pac2->type != TYPE_SOH) {
-		log("not a SOH packet");
+	} else if (pac2->type != target_type) {
+		log("not a target %d packet",target_type);
 		ack = 0;
 	} else {
-		log("a good packet");
+		log("a good type : %d packet",target_type);
 		ack = 1;
 	}
 	return ack;
