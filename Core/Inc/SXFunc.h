@@ -59,5 +59,8 @@ void SX_receiver();
 //int SX_check_packet(SX_packet *pac2);
 int SX_check_packet(SX_packet *pac2, uint8_t target_type);
 int SX_recv_once(SX_packet *pac);
+void SX_generate_packet(SX_packet *pac, uint8_t type, char *buf, uint8_t src,
+		uint8_t dst, uint8_t seq, uint8_t next_hop);
+void SX_print(SX_packet *pac);
 
 #endif /* INC_SXFUNC_H_ */

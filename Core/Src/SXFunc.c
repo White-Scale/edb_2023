@@ -54,10 +54,39 @@ void SX_init() {
 	printf("Done configuring LoRaModule\r\n");
 }
 
-//void SX_generate_packet(packet* pac,char * buf,uint8_t dst,uint8_t src,uint8_t seq,uint8_t next_hop){
-//	log("generate packet");
-//
-//}
+void SX_generate_packet(SX_packet *pac, uint8_t type, char *buf, uint8_t src,
+		uint8_t dst, uint8_t seq, uint8_t next_hop) {
+	log("generate packet");
+	int len_content = 0;
+	pac->type = type;
+	if (type == TYPE_SOH) {
+		//move the buffer to the packet content
+		len_content = sprintf((char*) pac->content, "%s", buf);
+	} else if (type == TYPE_ACK) {
+		//set the content as a empty string,but maybe actually not necessary
+		*(pac->content) = '\0';
+		len_content = 0;
+	}
+	//set attributes of the packet to send
+	pac->length = len_content + sizeof(SX_packet) + 1;
+	pac->reserve = 0;
+	pac->src = src;
+	pac->dst = dst;
+	pac->seq = seq;
+	pac->last_hop = MESH_ADDR_LOCAL;
+	pac->next_hop = next_hop;
+	//set CRC
+	CRC_BYTE(pac) = CRC8((uint8_t*) pac, pac->length - 1);
+}
+void SX_print(SX_packet *pac) {
+	uint8_t crc = CRC_BYTE(pac);
+	CRC_BYTE(pac) = 0;
+	printf(
+			"type:\t%d\r\nsrc:\t%d\r\ndst:\t%d\r\nlength:\t%d\r\nseq:\t%d\r\nlast_hop:\t%d\r\nnext_hop:\t%d\r\ncontent:\t%s\r\n",
+			pac->type, pac->src, pac->dst, pac->length, pac->seq, pac->last_hop,
+			pac->next_hop, pac->content);
+	CRC_BYTE(pac) = crc;
+}
 
 void SX_send(SX_packet *pac) {
 //	HAL_Delay(1000);
@@ -65,7 +94,7 @@ void SX_send(SX_packet *pac) {
 
 	message_length = pac->length;
 	SX_ret = SX1278_LoRaEntryTx(&sx1278, message_length, 2000);
-	isRx =0;
+	isRx = 0;
 	log("Entry: %d", SX_ret);
 	uint8_t *tmp = (uint8_t*) pac;
 	log("sending a packet with header : %d %d %d %d %d %d", tmp[0], tmp[1],
@@ -84,7 +113,7 @@ int SX_recv(SX_packet *pac, unsigned int time_out, unsigned freq) {
 	log("Receiving package...");
 	int cnt = 0;
 	SX_ret = SX1278_LoRaEntryRx(&sx1278, 16, 2000);
-	isRx=1;
+	isRx = 1;
 	//if max delay time,just wait until a packet arrive
 	while (time_out == MAX_DELAY_TIME ? 1 : (cnt < time_out)) {
 		SX_ret = SX1278_LoRaRxPacket(&sx1278);
@@ -111,9 +140,9 @@ int SX_recv(SX_packet *pac, unsigned int time_out, unsigned freq) {
 }
 int SX_recv_once(SX_packet *pac) {
 //	log("checking buffer..");
-	if(!isRx){
+	if (!isRx) {
 		SX_ret = SX1278_LoRaEntryRx(&sx1278, 16, 2000);
-		isRx =1;
+		isRx = 1;
 	}
 	//if max delay time,just wait until a packet arrive
 	SX_ret = SX1278_LoRaRxPacket(&sx1278);
@@ -197,7 +226,7 @@ void SX_sender() {
  * 2 for dst no this node
  * 3 for not a specific packet
  */
-int SX_check_packet(SX_packet *pac2,uint8_t target_type) {
+int SX_check_packet(SX_packet *pac2, uint8_t target_type) {
 	int ack = 1;
 	if (CRC_BYTE(pac2) != CRC8((uint8_t*) pac2, pac2->length - 1)) {
 		log("CRC: %d %d", CRC_BYTE(pac2),
@@ -208,10 +237,10 @@ int SX_check_packet(SX_packet *pac2,uint8_t target_type) {
 		log("dst not this node");
 		ack = 0;
 	} else if (pac2->type != target_type) {
-		log("not a target %d packet",target_type);
+		log("not a target %d packet", target_type);
 		ack = 0;
 	} else {
-		log("a good type : %d packet",target_type);
+		log("a good type : %d packet", target_type);
 		ack = 1;
 	}
 	return ack;

@@ -183,25 +183,12 @@ void mytask_receiver(void *argument) {
 				int valid = SX_check_packet(pac2, (uint8_t) TYPE_SOH);
 
 				if (valid) {
-					uint8_t crc = CRC_BYTE(pac2);
-					CRC_BYTE(pac2) = 0;
-					printf(
-							"[receiver] succesfully received a packect\r\n[receiver] content: %s\r\n",
-							pac2->content);
-					CRC_BYTE(pac2) = crc;
+
+					printf("[receiver] succesfully received a packect\r\n");
+					SX_print(pac2);
 					SX_packet *pac = (SX_packet*) buffer;
-					//set the packet's attributes
-					pac->type = TYPE_ACK;
-					pac->src = pac2->dst;
-					pac->dst = pac2->src;
-					pac->seq = 0;
-					//set the content as a empty string,but maybe actually not necessary
-					*(pac->content) = '\0';
-					int len_content = 0;
-					//set other attributes
-					pac->reserve = 0;
-					pac->length = len_content + sizeof(SX_packet) + 1;
-					CRC_BYTE(pac) = CRC8((uint8_t*) pac, pac->length - 1);
+					SX_generate_packet(pac, TYPE_ACK, NULL, pac2->dst,
+							pac2->src, 0, 0);
 					//send the packet
 					SX_send(pac);
 
@@ -227,49 +214,49 @@ void mytask_sender(void *argument) {
 			ulTaskNotifyTake( pdTRUE, portMAX_DELAY);
 		}
 
-		if (message_flag == 0) {
-			continue;
-		}
 		xSemaphoreTake(SX1278_sem, portMAX_DELAY);
 		{
 			//use the resource "message buffer"
 			xSemaphoreTake(message_sem, portMAX_DELAY);
 			{
-				//move the message to the packet buffer
-				int len_content = sprintf((char*) pac->content, "%s",
-						(char*) message_buf);
-				pac->length = len_content + sizeof(SX_packet) + 1;
-
+				if (message_flag == 0) {
+					//if the message is empty
+					//loop
+					xSemaphoreGive(message_sem);
+					xSemaphoreGive(SX1278_sem);
+					continue;
+				}
+				//generate the packet
+				SX_generate_packet(pac, TYPE_SOH, (char*) message_buf,
+				MESH_ADDR_LOCAL,
+				MESH_ADDR_REMOTE, 0, 0);
+				//send the packet
+				SX_send(pac);
+				//print infomation
+				printf("[sender] succesfully sent a packect\r\n");
+				SX_print(pac);
+				//give the semaphore
+				xSemaphoreGive(message_sem);
 			}
-			//set attributes of the packet to send
-			pac->type = TYPE_SOH;
-			pac->src = MESH_ADDR_LOCAL;
-			pac->dst = MESH_ADDR_REMOTE;
-			//set CRC
-			CRC_BYTE(pac) = CRC8((uint8_t*) pac, pac->length - 1);
-			//send the packet
-			SX_send(pac);
-			uint8_t crc = CRC_BYTE(pac);
-			CRC_BYTE(pac) = 0;
-			printf(
-					"[sender] succesfully sent a packect\r\n[sender] content: %s\r\n",
-					pac->content);
-			CRC_BYTE(pac) = crc;
-			xSemaphoreGive(message_sem);
 
 			//set flags
 			wait_flag = 1;
 			got_ack = 0;
 		}
 		xSemaphoreGive(SX1278_sem);
-
+		//wait 2s for a ack
 		vTaskDelay(2000);
 
 		if (got_ack) {
 			retry_flag = 0;
 			retry_cnt = 0;
 
-			message_flag = 0;
+			xSemaphoreTake(message_sem, portMAX_DELAY);
+			{
+				message_flag = 0;
+				xSemaphoreGive(message_sem);
+			}
+
 			printf("[sender]get ack, success!\r\n");
 		} else {
 			retry_flag = 1;
@@ -279,8 +266,11 @@ void mytask_sender(void *argument) {
 			printf("[sender]get no ack, wait %d then resend\r\n", retry_time);
 			if (retry_cnt > 5) {
 				//send failed, give up
-				//					xSemaphoreGive(message_sem);
-				message_flag = 0;
+				xSemaphoreTake(message_sem, portMAX_DELAY);
+				{
+					message_flag = 0;
+					xSemaphoreGive(message_sem);
+				}
 				retry_flag = 0;
 				retry_cnt = 0;
 			}
