@@ -54,6 +54,9 @@
 uint8_t message_buf[256];
 uint8_t message_flag;
 
+//two flag for sender to know if a ack arrived
+uint8_t wait_flag, got_ack;
+
 TaskHandle_t handle_receiver, handle_sender, handle_generator;
 
 SemaphoreHandle_t SX1278_sem = NULL;
@@ -167,10 +170,16 @@ void mytask_receiver(void *argument) {
 
 		xSemaphoreTake(SX1278_sem, portMAX_DELAY);
 		{
-			log("receive once");
+//			log("receive once");
 			SX_packet *pac2 = (SX_packet*) buffer2;
 			int received = SX_recv_once(pac2);
 			if (received) {
+				if (wait_flag) {
+					if (SX_check_packet(pac2, (uint8_t) TYPE_ACK)) {
+						wait_flag = 0;
+						got_ack = 1;
+					}
+				}
 				int valid = SX_check_packet(pac2, (uint8_t) TYPE_SOH);
 
 				if (valid) {
@@ -246,37 +255,37 @@ void mytask_sender(void *argument) {
 					"[sender] succesfully sent a packect\r\n[sender] content: %s\r\n",
 					pac->content);
 			CRC_BYTE(pac) = crc;
-			//a 1s window to receive a ack
-			int res = SX_recv(pac2, 1000, 50);
-			if (res) {
-				if (SX_check_packet(pac2, TYPE_ACK) != 1) {
-					res = 0;
-				}
-			}
+			xSemaphoreGive(message_sem);
 
-			if (res) {
+			//set flags
+			wait_flag = 1;
+			got_ack = 0;
+		}
+		xSemaphoreGive(SX1278_sem);
+
+		vTaskDelay(2000);
+
+		if (got_ack) {
+			retry_flag = 0;
+			retry_cnt = 0;
+
+			message_flag = 0;
+			printf("[sender]get ack, success!\r\n");
+		} else {
+			retry_flag = 1;
+			retry_cnt++;
+			retry_time = (rand() % (1 << retry_cnt)) * 100;
+			log("wait %d then resend", retry_time);
+			printf("[sender]get no ack, wait %d then resend\r\n", retry_time);
+			if (retry_cnt > 5) {
+				//send failed, give up
+				//					xSemaphoreGive(message_sem);
+				message_flag = 0;
 				retry_flag = 0;
 				retry_cnt = 0;
-				xSemaphoreGive(message_sem);
-				message_flag = 0;
-				printf("[sender]get ack, success!\r\n");
-			} else {
-				retry_flag = 1;
-				retry_cnt++;
-				retry_time = (rand() % (1 << retry_cnt)) * 100;
-				log("wait %d then resend", retry_time);
-				printf("[sender]get no ack, wait %d then resend\r\n", retry_time);
-				if (retry_cnt > 5) {
-					//send failed, give up
-//					xSemaphoreGive(message_sem);
-					message_flag = 0;
-					retry_flag = 0;
-					retry_cnt = 0;
-				}
-				xSemaphoreGive(message_sem);
 			}
-			xSemaphoreGive(SX1278_sem);
 		}
+
 	}
 }
 
