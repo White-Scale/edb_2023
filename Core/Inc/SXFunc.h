@@ -20,6 +20,9 @@ extern char buffer2[];
 extern int message;
 extern int message_length;
 extern int SX_ret;
+// a unsigned char array to store the route information
+// 0 for neighbor, 255 for can't reach, other for next hop
+extern uint8_t SX_route_table[16];
 
 /*all the address ,0 and 255 is reserved */
 typedef struct packet {
@@ -50,6 +53,7 @@ typedef struct packet {
 #define TYPE_SOH 1
 #define TYPE_ACK 2
 #define TYPE_NAK 3
+#define TYPE_INFO 4
 
 void SX_init();
 void SX_send(SX_packet *pac);
@@ -57,7 +61,12 @@ int SX_recv(SX_packet *pac, unsigned int time_out, unsigned freq);
 void SX_sender();
 void SX_receiver();
 //int SX_check_packet(SX_packet *pac2);
-int SX_check_packet(SX_packet *pac2, uint8_t target_type);
+
+int SX_check_type(SX_packet *pac, uint8_t target_type) ;
+int SX_check_CRC(SX_packet *pac);
+int SX_check_dst(SX_packet *pac, uint8_t dst);
+int SX_check_nexthop(SX_packet *pac, uint8_t next_hop);
+
 int SX_recv_once(SX_packet *pac);
 void SX_generate_packet(SX_packet *pac, uint8_t type, char *buf, uint8_t src,
 		uint8_t dst, uint8_t seq, uint8_t next_hop);

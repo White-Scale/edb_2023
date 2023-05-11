@@ -29,6 +29,9 @@ int SX_ret;
 
 int isRx = 0;
 
+uint8_t SX_route_table[16] = { 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+		255, 255, 255, 255, 255 };
+
 unsigned char CRC8(unsigned char *ptr, unsigned char len) {
 
 	unsigned char crc;
@@ -82,7 +85,7 @@ void SX_print(SX_packet *pac) {
 	uint8_t crc = CRC_BYTE(pac);
 	CRC_BYTE(pac) = 0;
 	printf(
-			"type:\t%d\r\nsrc:\t%d\r\ndst:\t%d\r\nlength:\t%d\r\nseq:\t%d\r\nlast_hop:\t%d\r\nnext_hop:\t%d\r\ncontent:\t%s\r\n",
+			"type:\t\t%d\r\nsrc:\t\t%d\r\ndst:\t\t%d\r\nlength:\t\t%d\r\nseq:\t\t%d\r\nlast_hop:\t%d\r\nnext_hop:\t%d\r\ncontent:\t%s\r\n",
 			pac->type, pac->src, pac->dst, pac->length, pac->seq, pac->last_hop,
 			pac->next_hop, pac->content);
 	CRC_BYTE(pac) = crc;
@@ -120,6 +123,8 @@ int SX_recv(SX_packet *pac, unsigned int time_out, unsigned freq) {
 //		log("Received: %d", SX_ret);
 		if (SX_ret > 0) {
 			SX1278_read(&sx1278, (uint8_t*) pac, SX_ret);
+
+			//print the packet
 			uint8_t crc = CRC_BYTE(pac);
 			uint8_t *tmp = (uint8_t*) pac;
 			log("received a packet with header : %d %d %d %d %d %d", tmp[0],
@@ -128,6 +133,8 @@ int SX_recv(SX_packet *pac, unsigned int time_out, unsigned freq) {
 			log("Content (%d): %s", SX_ret, (char* )pac->content);
 			CRC_BYTE(pac) = crc;
 			log("Package received ...");
+
+			//return
 			return SX_ret;
 		}
 //		HAL_Delay(freq);
@@ -148,6 +155,11 @@ int SX_recv_once(SX_packet *pac) {
 	SX_ret = SX1278_LoRaRxPacket(&sx1278);
 	if (SX_ret > 0) {
 		SX1278_read(&sx1278, (uint8_t*) pac, SX_ret);
+		if (pac->last_hop < 16) {
+			//the last hop must be its neighbor
+			SX_route_table[pac->last_hop] = 0;
+		}
+
 		uint8_t crc = CRC_BYTE(pac);
 		uint8_t *tmp = (uint8_t*) pac;
 		log("received a packet with header : %d %d %d %d %d %d", tmp[0], tmp[1],
@@ -226,24 +238,39 @@ void SX_sender() {
  * 2 for dst no this node
  * 3 for not a specific packet
  */
-int SX_check_packet(SX_packet *pac2, uint8_t target_type) {
-	int ack = 1;
-	if (CRC_BYTE(pac2) != CRC8((uint8_t*) pac2, pac2->length - 1)) {
-		log("CRC: %d %d", CRC_BYTE(pac2),
-				CRC8((uint8_t* ) pac2, pac2->length - 1));
-		log("CRC wrong");
-		ack = 0;
-	} else if (pac2->dst != MESH_ADDR_LOCAL) {
-		log("dst not this node");
-		ack = 0;
-	} else if (pac2->type != target_type) {
+int SX_check_type(SX_packet *pac, uint8_t target_type) {
+	int ret = 1;
+	if (pac->type != target_type) {
 		log("not a target %d packet", target_type);
-		ack = 0;
-	} else {
-		log("a good type : %d packet", target_type);
-		ack = 1;
+		ret = 0;
 	}
-	return ack;
+	return ret;
+}
+int SX_check_CRC(SX_packet *pac) {
+	int ret = 1;
+	if (CRC_BYTE(pac) != CRC8((uint8_t*) pac, pac->length - 1)) {
+		log("CRC: %d %d", CRC_BYTE(pac),
+				CRC8((uint8_t* ) pac, pac->length - 1));
+		log("CRC wrong");
+		ret = 0;
+	}
+	return ret;
+}
+int SX_check_dst(SX_packet *pac, uint8_t dst) {
+	int ret = 1;
+	if (pac->dst != dst) {
+		log("dst not this node");
+		ret = 0;
+	}
+	return ret;
+}
+int SX_check_nexthop(SX_packet *pac, uint8_t next_hop) {
+	int ret = 1;
+	if (pac->next_hop != next_hop) {
+		log("next_hop wrong");
+		ret = 0;
+	}
+	return ret;
 }
 
 void SX_receiver() {

@@ -173,16 +173,16 @@ void mytask_receiver(void *argument) {
 //			log("receive once");
 			SX_packet *pac2 = (SX_packet*) buffer2;
 			int received = SX_recv_once(pac2);
-			if (received) {
+			if (received && SX_check_CRC(pac2)) {
 				if (wait_flag) {
-					if (SX_check_packet(pac2, (uint8_t) TYPE_ACK)) {
+					if (SX_check_dst(pac2, MESH_ADDR_LOCAL)
+							&& SX_check_type(pac2, (uint8_t) TYPE_ACK)) {
 						wait_flag = 0;
 						got_ack = 1;
 					}
 				}
-				int valid = SX_check_packet(pac2, (uint8_t) TYPE_SOH);
-
-				if (valid) {
+				if (SX_check_type(pac2, (uint8_t) TYPE_SOH)
+						&& SX_check_dst(pac2, MESH_ADDR_LOCAL)) {
 
 					printf("[receiver] succesfully received a packect\r\n");
 					SX_print(pac2);
@@ -192,6 +192,21 @@ void mytask_receiver(void *argument) {
 					//send the packet
 					SX_send(pac);
 
+				} else if (SX_check_type(pac2, (uint8_t) TYPE_INFO)) {
+					printf("[receiver] succesfully received a route info\r\n");
+					SX_print(pac2);
+					int i = 0;
+					for(i =0;i<16;i++){
+						if(pac2->content[i]!=255){
+							if(SX_route_table[i] == 255){
+								SX_route_table[i] = pac2->last_hop;
+							}
+						}
+					}
+				}else if (SX_check_nexthop(pac2,MESH_ADDR_LOCAL)){
+					pac2->next_hop = SX_route_table[pac2->dst];
+					pac2->last_hop = MESH_ADDR_LOCAL;
+					SX_send(pac2);
 				}
 			}
 
@@ -229,7 +244,7 @@ void mytask_sender(void *argument) {
 				//generate the packet
 				SX_generate_packet(pac, TYPE_SOH, (char*) message_buf,
 				MESH_ADDR_LOCAL,
-				MESH_ADDR_REMOTE, 0, 0);
+				MESH_ADDR_REMOTE, 0, SX_route_table[MESH_ADDR_REMOTE]);
 				//send the packet
 				SX_send(pac);
 				//print infomation
