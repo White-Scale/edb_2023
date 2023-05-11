@@ -52,14 +52,9 @@ void SX_init() {
 	SX1278_init(&sx1278, 434000000, SX1278_POWER_11DBM, SX1278_LORA_SF_7,
 	SX1278_LORA_BW_125KHZ, SX1278_LORA_CR_4_5, SX1278_LORA_CRC_EN, 10);
 	printf("Done configuring LoRaModule\r\n");
-//#ifdef RXM
-//	SX_ret = SX1278_LoRaEntryRx(&sx1278, 16, 2000);
-//	#else
-//	SX_ret = SX1278_LoRaEntryTx(&sx1278, 16, 2000);
-//#endif
 }
 
-//void SX_generate_packet(char * buf,uint8_t dst,uint8_t src){
+//void SX_generate_packet(packet* pac,char * buf,uint8_t dst,uint8_t src,uint8_t seq,uint8_t next_hop){
 //	log("generate packet");
 //
 //}
