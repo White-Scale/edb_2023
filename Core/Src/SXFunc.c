@@ -158,6 +158,13 @@ int SX_recv_once(SX_packet *pac) {
 		if (pac->last_hop < 16) {
 			//the last hop must be its neighbor
 			SX_route_table[pac->last_hop] = 0;
+			log(	"\r\n"
+					"route table:\t\t  1\t  2\t  3\t  4\t  5\t  6\t  7\t  8\t  9\t 10\t\r\n"
+					"           :\t\t %d\t %d\t %d\t %d\t %d\t %d\t %d\t %d\t %d\t %d\t\r\n",
+					SX_route_table[1], SX_route_table[2], SX_route_table[3],
+					SX_route_table[4], SX_route_table[5], SX_route_table[6],
+					SX_route_table[7], SX_route_table[8], SX_route_table[9],
+					SX_route_table[10]);
 		}
 
 		uint8_t crc = CRC_BYTE(pac);
