@@ -25,6 +25,7 @@ char buffer2[512];
 
 int message = 0;
 int message_length;
+int message_dst;
 int SX_ret;
 
 int isRx = 0;
@@ -70,6 +71,14 @@ void SX_generate_packet(SX_packet *pac, uint8_t type, char *buf, uint8_t src,
 		*(pac->content) = '\0';
 		len_content = 0;
 	}
+	else if (type == TYPE_INFO) {
+			//set the content as a empty string,but maybe actually not necessary
+			int i =0;
+			for(i=0;i<16;i++){
+				pac->content[i] = SX_route_table[i];
+			}
+			len_content =16;
+		}
 	//set attributes of the packet to send
 	pac->length = len_content + sizeof(SX_packet) + 1;
 	pac->reserve = 0;

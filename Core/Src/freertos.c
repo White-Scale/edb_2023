@@ -57,7 +57,7 @@ uint8_t message_flag;
 //two flag for sender to know if a ack arrived
 uint8_t wait_flag, got_ack;
 
-TaskHandle_t handle_receiver, handle_sender, handle_generator;
+TaskHandle_t handle_receiver, handle_sender, handle_generator, handle_router;
 
 SemaphoreHandle_t SX1278_sem = NULL;
 SemaphoreHandle_t message_sem = NULL;
@@ -73,6 +73,7 @@ const osThreadAttr_t defaultTask_attributes = { .name = "defaultTask",
 void mytask_receiver(void *argument);
 void mytask_sender(void *argument);
 void mytask_generator(void *argument);
+void mytask_router(void *argument);
 /* USER CODE END FunctionPrototypes */
 
 void StartDefaultTask(void *argument);
@@ -129,6 +130,10 @@ void MX_FREERTOS_Init(void) {
 			(const char*) "thread_gen", (uint16_t) 256, (void*) NULL,
 			(UBaseType_t) 2, (TaskHandle_t*) &handle_generator);
 	log("ret after create gen %d", ret);
+	ret = xTaskCreate((TaskFunction_t) mytask_router,
+			(const char*) "thread_router", (uint16_t) 256, (void*) NULL,
+			(UBaseType_t) 2, (TaskHandle_t*) &handle_router);
+	log("ret after create router %d", ret);
 	/* add threads, ... */
 	/* USER CODE END RTOS_THREADS */
 
@@ -174,14 +179,12 @@ void mytask_receiver(void *argument) {
 			SX_packet *pac2 = (SX_packet*) buffer2;
 			int received = SX_recv_once(pac2);
 			if (received && SX_check_CRC(pac2)) {
-				if (wait_flag) {
-					if (SX_check_dst(pac2, MESH_ADDR_LOCAL)
-							&& SX_check_type(pac2, (uint8_t) TYPE_ACK)) {
-						wait_flag = 0;
-						got_ack = 1;
-					}
-				}
-				if (SX_check_type(pac2, (uint8_t) TYPE_SOH)
+				// NOT SURE this else if is correct or not
+				if (wait_flag && SX_check_dst(pac2, MESH_ADDR_LOCAL)
+						&& SX_check_type(pac2, (uint8_t) TYPE_ACK)) {
+					wait_flag = 0;
+					got_ack = 1;
+				} else if (SX_check_type(pac2, (uint8_t) TYPE_SOH)
 						&& SX_check_dst(pac2, MESH_ADDR_LOCAL)) {
 
 					printf("[receiver] succesfully received a packect\r\n");
@@ -196,18 +199,25 @@ void mytask_receiver(void *argument) {
 					printf("[receiver] succesfully received a route info\r\n");
 					SX_print(pac2);
 					int i = 0;
-					for(i =0;i<16;i++){
-						if(pac2->content[i]!=255){
-							if(SX_route_table[i] == 255){
+					for (i = 0; i < 16; i++) {
+						if (pac2->content[i] != 255) {
+							if (SX_route_table[i] == 255) {
 								SX_route_table[i] = pac2->last_hop;
 							}
 						}
 					}
-				}else if (SX_check_nexthop(pac2,MESH_ADDR_LOCAL)){
+				} else if (SX_check_nexthop(pac2, MESH_ADDR_LOCAL)) {
 					pac2->next_hop = SX_route_table[pac2->dst];
 					pac2->last_hop = MESH_ADDR_LOCAL;
+					CRC_BYTE(pac2) = CRC8((uint8_t*) pac2, pac2->length - 1);
 					SX_send(pac2);
+					printf("[receiver] succesfully transfer a packet\r\n");
 				}
+//				} else {
+//					printf(
+//							"[receiver] succesfully received a packet and will be ignored\r\n");
+//					SX_print(pac2);
+//				}
 			}
 
 			xSemaphoreGive(SX1278_sem);
@@ -243,8 +253,8 @@ void mytask_sender(void *argument) {
 				}
 				//generate the packet
 				SX_generate_packet(pac, TYPE_SOH, (char*) message_buf,
-				MESH_ADDR_LOCAL,
-				MESH_ADDR_REMOTE, 0, SX_route_table[MESH_ADDR_REMOTE]);
+				MESH_ADDR_LOCAL, message_dst, 0, SX_route_table[message_dst]);
+//				message_dst, 0, 1);
 				//send the packet
 				SX_send(pac);
 				//print infomation
@@ -311,6 +321,8 @@ void mytask_generator(void *argument) {
 			if (message_flag == 0) {
 				//fill the message buffer
 				sprintf((char*) message_buf, "Hello M3! seq:%d", seq);
+				message_dst = MESH_ADDR_REMOTE;
+//				message_dst =3;
 				message_flag = 1;
 				seq++;
 			}
@@ -321,6 +333,30 @@ void mytask_generator(void *argument) {
 		}
 	}
 
+}
+
+void mytask_router(void *argument) {
+
+	uint32_t wait_time = 0;
+	wait_time = (rand() % 10) * 50 + 10000;
+	int seq = 0;
+
+	TickType_t xLastWakeTime;
+
+	xLastWakeTime = xTaskGetTickCount();
+	for (;;) {
+		vTaskDelayUntil(&xLastWakeTime, wait_time);
+		log("in router()");
+		xSemaphoreTake(SX1278_sem, portMAX_DELAY);
+		{
+			SX_packet *pac = (SX_packet*) buffer;
+			SX_generate_packet(pac, TYPE_INFO, NULL,
+			MESH_ADDR_LOCAL, 255, 0, 255);
+			SX_send(pac);
+			xSemaphoreGive(SX1278_sem);
+			wait_time = (rand() % 10) * 50 + 10000;
+		}
+	}
 }
 /* USER CODE END Application */
 

@@ -19,6 +19,7 @@ extern char buffer2[];
 
 extern int message;
 extern int message_length;
+extern int message_dst;
 extern int SX_ret;
 // a unsigned char array to store the route information
 // 0 for neighbor, 255 for can't reach, other for next hop
