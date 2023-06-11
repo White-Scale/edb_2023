@@ -23,25 +23,25 @@ void delay_us(uint16_t us)
     HAL_TIM_Base_Stop(&htim2);
 }
 
-// 将 EHT 的 GPIO 切换为输出模式
+// 将 DHT 的 GPIO 切换为输出模式
 void DHT_Change_Output()
 {
     GPIO_InitTypeDef GPIO_InitStruct = {0}; // 初始化为 0
-    GPIO_InitStruct.Pin = EHT_Pin;
+    GPIO_InitStruct.Pin = DHT_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP; // 输出模式
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(EHT_GPIO_Port, &GPIO_InitStruct);
+    HAL_GPIO_Init(DHT_GPIO_Port, &GPIO_InitStruct);
 }
 
-// 将 EHT 的 GPIO 切换为输入模式
+// 将 DHT 的 GPIO 切换为输入模式
 void DHT_Change_Input()
 {
     GPIO_InitTypeDef GPIO_InitStruct = {0}; // 初始化为 0
-    GPIO_InitStruct.Pin = EHT_Pin;
+    GPIO_InitStruct.Pin = DHT_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_INPUT; // 输入模式
     GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(EHT_GPIO_Port, &GPIO_InitStruct);
+    HAL_GPIO_Init(DHT_GPIO_Port, &GPIO_InitStruct);
 }
 
 // 向 DHT11 发送开始信号
