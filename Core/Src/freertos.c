@@ -42,7 +42,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define NODE_NUM 20
+#define NODE_NUM 10
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -58,13 +58,8 @@ uint8_t message_flag;
 // two flag for sender to know if a ack arrived
 uint8_t wait_flag, got_ack;
 
-// define a dictionary-like to store each node's data
-typedef struct {
-    uint8_t node;
-    uint8_t data[256];
-} DictionaryLike;
-DictionaryLike data_of_nodes[NODE_NUM];
-int dictionarySize = 0;
+// define an array to store each node's data
+uint8_t* data_of_nodes[NODE_NUM];
 
 TaskHandle_t handle_receiver, handle_sender, handle_generator, handle_router;
 
@@ -87,10 +82,6 @@ void mytask_sender(void *argument);
 void mytask_generator(void *argument);
 void mytask_router(void *argument);
 
-// receiver use
-void add_node(uint8_t node, const uint8_t* data);
-int find_node(uint8_t node);
-void modify_data(uint8_t node, const uint8_t* newData);
 /* USER CODE END FunctionPrototypes */
 
 void StartDefaultTask(void *argument);
@@ -223,12 +214,8 @@ void mytask_receiver(void *argument)
 
 				//----------------新增部分---------------------------
 				// 存储节点信息
-				int node_idx = find_node(pac2->src);
-				if(node_idx == -1){
-					add_node(pac2->src, pac2->content);
-				} else {
-					modify_data(pac2->src, pac2->content);
-				}
+				data_of_nodes[pac2->src] = pac2->content;
+				printf("[receiver] node No.%d modified.\r\n", (int)pac2->src);
 				//--------------------------------------------------
 
 				// 生成一个确认数据包
@@ -422,38 +409,5 @@ void mytask_router(void *argument)
             wait_time = (rand() % 10) * 50 + 10000;
         }
     }
-}
-
-void add_node(uint8_t node, const uint8_t* data){
-	DictionaryLike entry;
-	entry.node = node;
-	strncpy((char*)entry.data, (const char*)data, sizeof(data));
-	entry.data[sizeof(data)] = '\0';
-
-	data_of_nodes[dictionarySize] = entry;
-	dictionarySize++;
-}
-
-int find_node(uint8_t node){
-	for (int i = 0; i < dictionarySize; i++) {
-		if (data_of_nodes[i].node == node) {
-			return i;
-		}
-	}
-
-	return -1;
-}
-
-void modify_data(uint8_t node, const uint8_t* newData){
-	for (int i = 0; i < dictionarySize; i++) {
-		if (data_of_nodes[i].node == node) {
-			strncpy((char*)data_of_nodes[i].data, (const char*)newData, sizeof(newData));
-			data_of_nodes[i].data[sizeof(newData)] = '\0';
-			return;
-		}
-	}
-
-	printf("Node not found\n");
-	return;
 }
 /* USER CODE END Application */
