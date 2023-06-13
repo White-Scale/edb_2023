@@ -209,7 +209,7 @@ void mytask_receiver(void *argument)
 			// 检查是否为类型为 TYPE_SOH 且目的地为 MESH_ADDR_LOCAL 的数据包
 			else if (SX_check_type(pac2, (uint8_t)TYPE_SOH) && SX_check_dst(pac2, MESH_ADDR_LOCAL))
 			{
-				printf("[receiver] successfully received a packet.\r\n");
+				if (MESH_ADDR_LOCAL != 1) printf("[receiver] successfully received a packet.\r\n");
 				SX_print(pac2);
 
 				//----------------新增部分---------------------------
@@ -228,7 +228,7 @@ void mytask_receiver(void *argument)
 			// 检查是否为类型为 TYPE_INFO 的路由信息数据包
 			else if (SX_check_type(pac2, (uint8_t)TYPE_INFO))
 			{
-				printf("[receiver] successfully received a route info\r\n");
+				if (MESH_ADDR_LOCAL != 1) printf("[receiver] successfully received a route info\r\n");
 				SX_print(pac2);
 
 				// 更新路由表
@@ -251,7 +251,7 @@ void mytask_receiver(void *argument)
 				pac2->last_hop = MESH_ADDR_LOCAL;
 				CRC_BYTE(pac2) = CRC8((uint8_t *)pac2, pac2->length - 1);
 				SX_send(pac2);
-				printf("[receiver] successfully transfer a packet\r\n");
+				if (MESH_ADDR_LOCAL != 1) printf("[receiver] successfully transfer a packet\r\n");
 			}
 //			else {
 //				printf(
@@ -303,7 +303,7 @@ void mytask_sender(void *argument)
                 // send the packet
                 SX_send(pac);
                 // print information
-                printf("[sender] successfully sent a packet\r\n");
+                if (MESH_ADDR_LOCAL != 1) printf("[sender] successfully sent a packet\r\n");
                 SX_print(pac);
                 // give the semaphore
                 xSemaphoreGive(message_sem);
@@ -328,7 +328,7 @@ void mytask_sender(void *argument)
                 xSemaphoreGive(message_sem);
             }
 
-            printf("[sender]get ack, success!\r\n");
+            if (MESH_ADDR_LOCAL != 1) printf("[sender]get ack, success!\r\n");
         }
         else
         {
@@ -336,7 +336,7 @@ void mytask_sender(void *argument)
             retry_cnt++;
             retry_time = (rand() % (1 << retry_cnt)) * 100;
             log("wait %d then resend", retry_time);
-            printf("[sender]get no ack, wait %d then resend\r\n", retry_time);
+            if (MESH_ADDR_LOCAL != 1) printf("[sender]get no ack, wait %d then resend\r\n", retry_time);
             if (retry_cnt > 5)
             {
                 // send failed, give up
@@ -354,35 +354,45 @@ void mytask_sender(void *argument)
 
 void mytask_generator(void *argument)
 {
+	if (MESH_ADDR_LOCAL == 1) {
+		for (;;) {
+			printf("%d\n", dictionarySize);
+			for (int i = 0; i < dictionarySize; i++) {
+				printf("%d %d %d %d %d\n", NODE(i), H(i), T(i), LOCX(i), LOCY(i));
+			}
+			sleep(5);
+		}
+	}
+	else {
+		uint32_t wait_time = 0;
+		wait_time = (rand() % 7 + 3) * 1000;
+		int seq = 0;
 
-    uint32_t wait_time = 0;
-    wait_time = (rand() % 7 + 3) * 1000;
-    int seq = 0;
+		TickType_t xLastWakeTime;
 
-    TickType_t xLastWakeTime;
-
-    xLastWakeTime = xTaskGetTickCount();
-    for (;;)
-    {
-        log("in generator()");
-        vTaskDelayUntil(&xLastWakeTime, wait_time);
-        xSemaphoreTake(message_sem, portMAX_DELAY);
-        {
-            if (message_flag == 0)
-            {
-                // fill the message buffer
-                //  sprintf((char*) message_buf, "Hello M3! seq:%d", seq);
-                DHT_ReadData(message_buf); // 从 DHT 读取数据
-                message_dst = MESH_ADDR_REMOTE;
-                message_flag = 1;
-                seq++;
-            }
-            log("message generated!");
-            xSemaphoreGive(message_sem);
-            wait_time = (rand() % 7 + 3) * 1000;
-            xTaskNotifyGive(handle_sender);
-        }
-    }
+		xLastWakeTime = xTaskGetTickCount();
+		for (;;)
+		{
+			log("in generator()");
+			vTaskDelayUntil(&xLastWakeTime, wait_time);
+			xSemaphoreTake(message_sem, portMAX_DELAY);
+			{
+				if (message_flag == 0)
+				{
+					// fill the message buffer
+					//  sprintf((char*) message_buf, "Hello M3! seq:%d", seq);
+					DHT_ReadData(message_buf); // 从 DHT 读取数据
+					message_dst = MESH_ADDR_REMOTE;
+					message_flag = 1;
+					seq++;
+				}
+				log("message generated!");
+				xSemaphoreGive(message_sem);
+				wait_time = (rand() % 7 + 3) * 1000;
+				xTaskNotifyGive(handle_sender);
+			}
+		}
+	}
 }
 
 void mytask_router(void *argument)
